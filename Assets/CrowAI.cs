@@ -38,7 +38,10 @@ public class CrowAI : MonoBehaviour
 
     public float checkInteterval = 0.2f;
 
-
+    public float ColliderSize = 0.4f;
+    private bool drawGizmo = false;
+    private float dist;
+    private Vector3 direction;
 
     private void Start()
     {
@@ -63,33 +66,44 @@ public class CrowAI : MonoBehaviour
         
         separationNeighbors.Clear();
         alignmentNeighbors.Clear();
-        
+        drawGizmo = false;
+        direction = Vector3.zero;
+        dist = 0;
         Collider[] colliders = Physics.OverlapSphere(transform.position, separationDistance);
         foreach (var c in colliders)
         {
             if (c != null && c.gameObject != this.gameObject)
             {
                 if (c.gameObject.layer == LayerMask.NameToLayer("IgnoreObj")) continue ;
+                if (c.name == this.transform.name) continue;
+
                 separationNeighbors.Add(c.gameObject);
             }
+
+
+        
         }
         
         //计算分离的力
         foreach (var neighbor in separationNeighbors)
         {
+            if (transform.position == neighbor.transform.position)
+            {
+                transform.position = new Vector3(transform.position.x+0.01f,transform.position.y+0.01f,transform.position.z+0.01f);
+            }
             //需要远离的方向
             Vector3 dir = transform.position - neighbor.transform.position;
-            
+
+
             //距离越小，施加的力越大
             separationForce += dir.normalized / dir.magnitude;
-            //Debug.Log(dir.magnitude);
         }
         
         if (separationNeighbors.Count>0)
         {
             separationForce *= separationWeight;
             //Debug.Log(separationForce);
-            //sumForce += separationForce;
+            sumForce += separationForce;
         }
         
         //计算队列的力
@@ -113,31 +127,38 @@ public class CrowAI : MonoBehaviour
         if (alignmentNeighbors.Count > 0) {
             avgDir /= alignmentNeighbors.Count;
             alignmentForce = avgDir - transform.forward;
-            Debug.Log("avgDir:"+avgDir+":::::::forward:"+transform.forward);
+//            Debug.Log("avgDir:"+avgDir+":::::::forward:"+transform.forward);
 
             alignmentForce *= alignmentWeight;   
-            //sumForce += alignmentForce;
+            sumForce += alignmentForce;
         }
         
 
         //聚集的力
-        if (alignmentNeighbors.Count <= 0) return;
-
+        //if (alignmentNeighbors.Count <= 0) return;
+        
         Vector3 center = Vector3.zero;
         foreach (GameObject n in alignmentNeighbors)
         {
             center += n.transform.position;
         }
-
+        
         center /= alignmentNeighbors.Count;
         Vector3 dirToCenter = center - transform.position;
         cohesionForce += dirToCenter;
         cohesionForce *= cohesionWeight;
-        //sumForce += alignmentForce;
+        sumForce += alignmentForce;
+
+        
 
         
         //向某个物体飞去
         Vector3 targetDir = target.transform.position - transform.position;
+        if (targetDir==Vector3.zero)
+        {
+            targetDir += new Vector3(0, 0, 0.01f);
+        }
+
         //temp 方向减去 当前方向
         sumForce +=(targetDir.normalized - transform.forward)*speed;
     }
@@ -151,7 +172,7 @@ public class CrowAI : MonoBehaviour
         //v = at 速度计算公式
         velocity += a * Time.deltaTime;
 //      Physics.ComputePenetration()
-
+        InterObjInvok();
         transform.rotation = Quaternion.Lerp(transform.rotation, Quaternion.LookRotation(velocity), Time.deltaTime*10);
         transform.Translate(transform.forward*velocity.magnitude* Time.deltaTime,Space.World);
 
@@ -163,5 +184,44 @@ public class CrowAI : MonoBehaviour
         Gizmos.DrawWireSphere(transform.position,separationDistance);
         Gizmos.color = Color.green;
         Gizmos.DrawLine(transform.position,transform.position+transform.forward*3);
+        if (drawGizmo)
+        {
+            Gizmos.color = Color.yellow;
+            Gizmos.DrawLine(transform.position,transform.position+direction*dist);
+
+            Gizmos.DrawCube(transform.position,new Vector3(ColliderSize,ColliderSize,ColliderSize));
+        }
+
+    }
+
+
+    void InterObjInvok()
+    {
+        //当碰见其他交互物体时
+        Collider[] colliders = Physics.OverlapSphere(transform.position,ColliderSize);
+        foreach (var c in colliders)
+        {
+            if (c.gameObject.layer == LayerMask.NameToLayer("InterObj"))//检测是否是交互物体
+            {
+                drawGizmo = true;
+                Collider interObjCollider = c.GetComponent<Collider>();
+                Collider selfObjCollider = this.GetComponent<Collider>();
+    
+                bool overlap = Physics.ComputePenetration(
+                    selfObjCollider,transform.position,transform.rotation,
+                    interObjCollider,c.transform.position,c.transform.rotation,
+                    out direction,out dist);
+                if (overlap)
+                {
+                    direction = new Vector3(direction.x,0,direction.z);
+                    //transform.Translate(direction * dist);
+                    Debug.DrawRay(transform.position,direction*dist,Color.red);
+                    transform.position += direction * dist;
+                }
+
+
+            }
+        }
+        
     }
 }
